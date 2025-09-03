@@ -10,7 +10,7 @@ class OffboardControl(Node):
     """Node for controlling a vehicle in offboard mode."""
 
     def __init__(self) -> None:
-        super().__init__('offboard_control_takeoff_and_land')
+        super().__init__('offboard_control_vehicler_rates_setpoint')
 
         # Configure QoS profile for publishing and subscribing
         qos_profile = QoSProfile(
@@ -99,9 +99,9 @@ class OffboardControl(Node):
     def publish_rates_setpoint(self, roll: float, pitch: float, yaw: float):
         """Publish the rates setpoint."""
         msg = VehicleRatesSetpoint()
-        # msg.roll = roll
-        # msg.pitch = pitch
-        # msg.yaw = yaw
+        msg.roll = roll
+        msg.pitch = pitch
+        msg.yaw = yaw
         msg.thrust_body = [0.0,0.0,-1.0]  # Set a constant thrust value
         msg.timestamp = int(self.get_clock().now().nanoseconds / 1000)
         self.vehicle_rates_setpoint_publisher.publish(msg)

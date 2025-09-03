@@ -43,7 +43,7 @@ class OffboardControl(Node):
         self.takeoff_height = -5.0
 
         # Create a timer to publish control commands
-        self.timer = self.create_timer(0.1, self.timer_callback)
+        self.timer = self.create_timer(0.08, self.timer_callback)
 
     def vehicle_local_position_callback(self, vehicle_local_position):
         """Callback function for vehicle_local_position topic subscriber."""
@@ -102,10 +102,11 @@ class OffboardControl(Node):
         msg.roll = roll
         msg.pitch = pitch
         msg.yaw = yaw
-        msg.thrust_body = [0.0,0.0,-1.0]  # Set a constant thrust value
+        msg.thrust_body = [0.0,0.0,-0.9]  # Set a constant thrust value
         msg.timestamp = int(self.get_clock().now().nanoseconds / 1000)
+        msg.reset_integral = False
         self.vehicle_rates_setpoint_publisher.publish(msg)
-        print('commanding offboard...') 
+        self.get_logger().info('commanding offboard...')
 
     def publish_vehicle_command(self, command, **params) -> None:
         """Publish a vehicle command."""
@@ -139,7 +140,7 @@ class OffboardControl(Node):
         #     print('commanding offboard...')
 
         if self.vehicle_local_position.z > self.takeoff_height and self.vehicle_status.nav_state == VehicleStatus.NAVIGATION_STATE_OFFBOARD:
-            self.publish_rates_setpoint(0.0, 0.0, 0.3)
+            self.publish_rates_setpoint(0.0, 0.0, 0.0)
                    
         
         elif self.vehicle_local_position.z <= self.takeoff_height:

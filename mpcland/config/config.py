@@ -9,14 +9,14 @@ V2版修改说明：
 import numpy as np
 
 # =============== 仿真基本参数 ===============
-DELTA_T = 0.05  # 时间步长 (秒)。这是整个系统中离散时间仿真的基本单位。
+DELTA_T = 0.1  # 时间步长 (秒)。这是整个系统中离散时间仿真的基本单位。
 MAX_EPISODE_TIME = 20.0  # 单次仿真的最大时长 (秒)。
 GRAVITY = 9.8  # 重力加速度 (m/s²)。
 
 # =============== 四旋翼物理参数 ===============
 class Quadrotor:
     """定义了四旋翼无人机的物理属性。"""
-    MASS = 0.9  # 质量 (kg)
+    MASS = 1.5  # 质量 (kg)
     INERTIA_MATRIX = np.array([  # 转动惯量矩阵 (kg·m²)，描述了物体对旋转运动的惯性。
         [0.01, 0.0, 0.0],
         [0.0, 0.01, 0.0],
@@ -24,12 +24,12 @@ class Quadrotor:
     ])
     # 推力重量比。这个值决定了无人机能产生的最大推力。
     # 最大推力 = THRUST_TO_WEIGHT_RATIO * MASS * GRAVITY
-    THRUST_TO_WEIGHT_RATIO = 3.11
+    THRUST_TO_WEIGHT_RATIO = 2.4
     # 三个轴上的最大角速度 (rad/s)，用于归一化MPC的控制输入。
     OMEGA_MAX = np.array([5.0, 5.0, 0.3])
     # 归一化推力的范围。MPC输出的推力值将被限制在该范围内。
     THRUST_MIN = 0.3  # 最小推力，避免电机停转。
-    THRUST_MAX = 4.0  # 最大推力，对应悬停推力的 THRUST_TO_WEIGHT_RATIO 倍。
+    THRUST_MAX = 1.0  # 最大推力，对应悬停推力的 THRUST_TO_WEIGHT_RATIO 倍。
 
 # =============== 移动平台物理参数 ===============
 class MovingPlatform:

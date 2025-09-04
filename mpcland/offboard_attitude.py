@@ -3,7 +3,7 @@
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
-from px4_msgs.msg import OffboardControlMode, TrajectorySetpoint, VehicleCommand, VehicleLocalPosition,VehicleThrustSetpoint, VehicleStatus,VehicleRatesSetpoint
+from px4_msgs.msg import OffboardControlMode, TrajectorySetpoint, VehicleCommand, SensorCombined,VehicleLocalPosition,VehicleThrustSetpoint, VehicleStatus,VehicleRatesSetpoint
 
 
 class OffboardControl(Node):
@@ -37,12 +37,16 @@ class OffboardControl(Node):
             VehicleLocalPosition, '/fmu/out/vehicle_local_position_v1', self.vehicle_local_position_callback, qos_profile)
         self.vehicle_status_subscriber = self.create_subscription(
             VehicleStatus, '/fmu/out/vehicle_status_v1', self.vehicle_status_callback, qos_profile)
+        self.sensor_combined_subscriber = self.create_subscription(
+            SensorCombined, '/fmu/out/sensor_combined', self.sensor_combined_callback, qos_profile)
 
         # Initialize variables
         self.offboard_setpoint_counter = 0
         self.vehicle_local_position = VehicleLocalPosition()
         self.vehicle_status = VehicleStatus()
+        self.sensor_combined = SensorCombined()
         self.takeoff_height = -5.0
+        self.mode=False  #True:角速度-推力控制模式 False:位置控制模式
 
         # Create a timer to publish control commands
         self.timer = self.create_timer(0.08, self.timer_callback)
@@ -54,6 +58,10 @@ class OffboardControl(Node):
     def vehicle_status_callback(self, vehicle_status):
         """Callback function for vehicle_status topic subscriber."""
         self.vehicle_status = vehicle_status
+    
+    def sensor_combined_callback(self, sensor_combined):
+        """Callback function for sensor_combined topic subscriber."""
+        self.sensor_combined = sensor_combined    
 
     def arm(self):
         """Send an arm command to the vehicle."""
@@ -78,17 +86,30 @@ class OffboardControl(Node):
         self.publish_vehicle_command(VehicleCommand.VEHICLE_CMD_NAV_LAND)
         self.get_logger().info("Switching to land mode")
 
-    def publish_offboard_control_heartbeat_signal(self):
+    def publish_offboard_control_heartbeat_signal(self,mode:bool=False):
         """Publish the offboard control mode."""
-        msg = OffboardControlMode()
-        msg.position = False
-        msg.velocity = False
-        msg.acceleration = False
-        msg.attitude = False
-        msg.body_rate = True
-        msg.thrust_and_torque = True
-        msg.timestamp = int(self.get_clock().now().nanoseconds / 1000)
-        self.offboard_control_mode_publisher.publish(msg)
+        if mode:
+            msg = OffboardControlMode()
+            msg.position = False
+            msg.velocity = False
+            msg.acceleration = False
+            msg.attitude = False
+            msg.body_rate = True
+            msg.thrust_and_torque = True
+            msg.timestamp = int(self.get_clock().now().nanoseconds / 1000)
+            self.offboard_control_mode_publisher.publish(msg)
+            self.get_logger().info('角速度-推力控制模式...')
+
+        else:
+            msg = OffboardControlMode()
+            msg.position = True
+            msg.velocity = False
+            msg.acceleration = False
+            msg.attitude = False
+            msg.body_rate = False
+            msg.timestamp = int(self.get_clock().now().nanoseconds / 1000)
+            self.offboard_control_mode_publisher.publish(msg)
+            self.get_logger().info('位置控制模式...')
 
     def publish_position_setpoint(self, x: float, y: float, z: float):
         """Publish the trajectory setpoint."""
@@ -97,7 +118,7 @@ class OffboardControl(Node):
         msg.yaw = 1.57079  # (90 degree)
         msg.timestamp = int(self.get_clock().now().nanoseconds / 1000)
         self.trajectory_setpoint_publisher.publish(msg)
-        self.get_logger().info(f"Publishing position setpoints {[x, y, z]}")
+        self.get_logger().info(f"发送位置控制指令： {[x, y, z]}")
 
     def publish_rates_setpoint(self, roll: float, pitch: float, yaw: float):
         """Publish the rates setpoint."""
@@ -109,7 +130,7 @@ class OffboardControl(Node):
         msg.timestamp = int(self.get_clock().now().nanoseconds / 1000)
         msg.reset_integral = False
         self.vehicle_rates_setpoint_publisher.publish(msg)
-        self.get_logger().info('commanding offboard...')
+        self.get_logger().info('发送角速度-推力控制指令...')
 
     def publish_vehicle_command(self, command, **params) -> None:
         """Publish a vehicle command."""
@@ -132,22 +153,21 @@ class OffboardControl(Node):
 
     def timer_callback(self) -> None:
         """Callback function for the timer."""
-        self.publish_offboard_control_heartbeat_signal()
+        self.publish_offboard_control_heartbeat_signal(self.mode)
         
         if self.offboard_setpoint_counter == 10:
             self.engage_offboard_mode()
             self.arm()
 
-        # if self.vehicle_local_position.z > self.takeoff_height and self.vehicle_status.nav_state == VehicleStatus.NAVIGATION_STATE_OFFBOARD:
-        #     self.publish_position_setpoint(0.0, 0.0, self.takeoff_height)
-        #     print('commanding offboard...')
-
         if self.vehicle_local_position.z > self.takeoff_height and self.vehicle_status.nav_state == VehicleStatus.NAVIGATION_STATE_OFFBOARD:
-            self.publish_rates_setpoint(0.0, 0.0, 0.0)
+            self.publish_position_setpoint(0.0, 0.0, self.takeoff_height)
             
         elif self.vehicle_local_position.z <= self.takeoff_height:
-            self.land()
-            exit(0)
+            # self.land()
+            # # exit(0)
+            self.mode=True  #切换到角速度-推力控制模式
+            self.publish_rates_setpoint(0.0, 0.0, 0.5)
+
 
         if self.offboard_setpoint_counter < 11:
             self.offboard_setpoint_counter += 1

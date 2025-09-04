@@ -3,7 +3,7 @@
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
-from px4_msgs.msg import OffboardControlMode, TrajectorySetpoint, VehicleCommand, SensorCombined,VehicleLocalPosition,VehicleThrustSetpoint, VehicleStatus,VehicleRatesSetpoint
+from px4_msgs.msg import OffboardControlMode, TrajectorySetpoint, VehicleCommand, SensorCombined,VehicleLocalPosition, VehicleStatus,VehicleRatesSetpoint
 
 
 class OffboardControl(Node):
@@ -29,8 +29,6 @@ class OffboardControl(Node):
             VehicleCommand, '/fmu/in/vehicle_command', qos_profile)
         self.vehicle_rates_setpoint_publisher = self.create_publisher(
             VehicleRatesSetpoint, '/fmu/in/vehicle_rates_setpoint', qos_profile)
-        self.vehicle_thrust_setpoint_publisher = self.create_publisher(
-            VehicleThrustSetpoint, '/fmu/in/vehicle_thrust_setpoint', qos_profile)
 
         # Create subscribers
         self.vehicle_local_position_subscriber = self.create_subscription(

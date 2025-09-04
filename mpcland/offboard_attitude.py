@@ -3,7 +3,7 @@
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
-from px4_msgs.msg import OffboardControlMode, TrajectorySetpoint, VehicleCommand, VehicleLocalPosition, VehicleStatus,VehicleRatesSetpoint
+from px4_msgs.msg import OffboardControlMode, TrajectorySetpoint, VehicleCommand, VehicleLocalPosition,VehicleThrustSetpoint, VehicleStatus,VehicleRatesSetpoint
 
 
 class OffboardControl(Node):
@@ -29,6 +29,8 @@ class OffboardControl(Node):
             VehicleCommand, '/fmu/in/vehicle_command', qos_profile)
         self.vehicle_rates_setpoint_publisher = self.create_publisher(
             VehicleRatesSetpoint, '/fmu/in/vehicle_rates_setpoint', qos_profile)
+        self.vehicle_thrust_setpoint_publisher = self.create_publisher(
+            VehicleThrustSetpoint, '/fmu/in/vehicle_thrust_setpoint', qos_profile)
 
         # Create subscribers
         self.vehicle_local_position_subscriber = self.create_subscription(
@@ -79,11 +81,12 @@ class OffboardControl(Node):
     def publish_offboard_control_heartbeat_signal(self):
         """Publish the offboard control mode."""
         msg = OffboardControlMode()
-        msg.position = True
+        msg.position = False
         msg.velocity = False
         msg.acceleration = False
         msg.attitude = False
-        msg.body_rate = False
+        msg.body_rate = True
+        msg.thrust_and_torque = True
         msg.timestamp = int(self.get_clock().now().nanoseconds / 1000)
         self.offboard_control_mode_publisher.publish(msg)
 
@@ -102,7 +105,7 @@ class OffboardControl(Node):
         msg.roll = roll
         msg.pitch = pitch
         msg.yaw = yaw
-        msg.thrust_body = [0.0,0.0,-0.9]  # Set a constant thrust value
+        msg.thrust_body =[0.0, 0.0, -0.729]  # Set a constant thrust value
         msg.timestamp = int(self.get_clock().now().nanoseconds / 1000)
         msg.reset_integral = False
         self.vehicle_rates_setpoint_publisher.publish(msg)
@@ -141,14 +144,10 @@ class OffboardControl(Node):
 
         if self.vehicle_local_position.z > self.takeoff_height and self.vehicle_status.nav_state == VehicleStatus.NAVIGATION_STATE_OFFBOARD:
             self.publish_rates_setpoint(0.0, 0.0, 0.0)
-                   
-        
+            
         elif self.vehicle_local_position.z <= self.takeoff_height:
             self.land()
             exit(0)
-
-
-
 
         if self.offboard_setpoint_counter < 11:
             self.offboard_setpoint_counter += 1

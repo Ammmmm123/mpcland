@@ -35,8 +35,8 @@ from utils import QuadMPC
 import config.config as Config
 
 # 设置matplotlib以正确显示中文和负号
-plt.rcParams['font.sans-serif'] = ['SimHei']
-plt.rcParams['axes.unicode_minus'] = False
+# plt.rcParams['font.sans-serif'] = ['SimHei']
+# plt.rcParams['axes.unicode_minus'] = False
 
 # ==============================================================================
 # 辅助函数 (与 debug_mpc_step_world_frame.py 完全一致)
@@ -241,13 +241,13 @@ def plot_results(history: dict, output_dir: str):
     fig = plt.figure(figsize=(10, 8))
     ax = fig.add_subplot(111, projection='3d')
     quad_p, plat_p = history['quad_pos'], history['plat_pos']
-    ax.plot(quad_p[:, 0], quad_p[:, 1], quad_p[:, 2], label='无人机轨迹', color='b')
-    ax.plot(plat_p[:, 0], plat_p[:, 1], plat_p[:, 2], label='平台轨迹', color='r', linestyle='--')
-    ax.scatter(quad_p[0, 0], quad_p[0, 1], quad_p[0, 2], c='blue', s=50, marker='o', label='无人机起点')
-    ax.scatter(quad_p[-1, 0], quad_p[-1, 1], quad_p[-1, 2], c='blue', s=80, marker='*', label='无人机终点')
-    ax.scatter(plat_p[0, 0], plat_p[0, 1], plat_p[0, 2], c='red', s=50, marker='o', label='平台起点')
+    ax.plot(quad_p[:, 0], quad_p[:, 1], quad_p[:, 2], label='Drone trajectory', color='b')
+    ax.plot(plat_p[:, 0], plat_p[:, 1], plat_p[:, 2], label='Platform trajectory', color='r', linestyle='--')
+    ax.scatter(quad_p[0, 0], quad_p[0, 1], quad_p[0, 2], c='blue', s=50, marker='o', label='Drone starting point')
+    ax.scatter(quad_p[-1, 0], quad_p[-1, 1], quad_p[-1, 2], c='blue', s=80, marker='*', label='Drone endpoint')
+    ax.scatter(plat_p[0, 0], plat_p[0, 1], plat_p[0, 2], c='red', s=50, marker='o', label='Platform Starting Point')
     ax.set_xlabel('X (m)'), ax.set_ylabel('Y (m)'), ax.set_zlabel('Z (m)')
-    ax.set_title('3D 轨迹对比'), ax.legend(), ax.grid(True)
+    ax.set_title('3D trajectory comparison'), ax.legend(), ax.grid(True)
     ax.set_aspect('equal', 'box')
     plt.savefig(os.path.join(output_dir, '1_trajectory_3d.png'))
     plt.close(fig)
@@ -255,18 +255,18 @@ def plot_results(history: dict, output_dir: str):
     # 图2: 相对位置与无人机速度
     fig, axs = plt.subplots(2, 1, figsize=(12, 10), sharex=True)
     rel_p, quad_v = history['rel_pos'], history['quad_vel']
-    axs[0].plot(time_ax, rel_p[:, 0], label='相对位置 x')
-    axs[0].plot(time_ax, rel_p[:, 1], label='相对位置 y')
-    axs[0].plot(time_ax, rel_p[:, 2], label='相对位置 z')
-    axs[0].axhline(y=Config.Termination.SUCCESS_XY_ERR_MAX, color='g', linestyle='--', label='水平成功边界')
+    axs[0].plot(time_ax, rel_p[:, 0], label='Relative Position x')
+    axs[0].plot(time_ax, rel_p[:, 1], label='Relative Position y')
+    axs[0].plot(time_ax, rel_p[:, 2], label='Relative Position z')
+    axs[0].axhline(y=Config.Termination.SUCCESS_XY_ERR_MAX, color='g', linestyle='--', label='Horizontal success boundary')
     axs[0].axhline(y=-Config.Termination.SUCCESS_XY_ERR_MAX, color='g', linestyle='--')
-    axs[0].set_ylabel('相对位置 (m)'), axs[0].set_title('相对位置随时间变化'), axs[0].legend(), axs[0].grid(True)
+    axs[0].set_ylabel('Relative position (m)'), axs[0].set_title('Time-Varying Relative position'), axs[0].legend(), axs[0].grid(True)
     
-    axs[1].plot(time_ax, quad_v[:, 0], label='无人机速度 vx')
-    axs[1].plot(time_ax, quad_v[:, 1], label='无人机速度 vy')
-    axs[1].plot(time_ax, quad_v[:, 2], label='无人机速度 vz')
-    axs[1].set_xlabel('时间 (s)'), axs[1].set_ylabel('无人机世界速度 (m/s)')
-    axs[1].set_title('无人机世界速度随时间变化'), axs[1].legend(), axs[1].grid(True)
+    axs[1].plot(time_ax, quad_v[:, 0], label='Drone vx')
+    axs[1].plot(time_ax, quad_v[:, 1], label='Drone vy')
+    axs[1].plot(time_ax, quad_v[:, 2], label='Drone vz')
+    axs[1].set_xlabel('time (s)'), axs[1].set_ylabel('Drone World (m/s)')
+    axs[1].set_title('Time-Varying Drone Velocity'), axs[1].legend(), axs[1].grid(True)
     plt.tight_layout()
     plt.savefig(os.path.join(output_dir, '2_relative_and_velocity_states.png'))
     plt.close(fig)
@@ -291,10 +291,10 @@ def create_animation(history: dict, output_dir: str, filename="simulation_animat
     ax.set_xlabel('X (m)'), ax.set_ylabel('Y (m)'), ax.set_zlabel('Z (m)')
     ax.set_aspect('equal', 'box')
 
-    quad_traj, = ax.plot([], [], [], 'b-', label='无人机轨迹')
-    plat_traj, = ax.plot([], [], [], 'r--', label='平台轨迹')
-    quad_pos, = ax.plot([], [], [], 'bo', markersize=8, label='无人机')
-    plat_surface, = ax.plot([], [], [], 'g-', linewidth=5, label='平台表面')
+    quad_traj, = ax.plot([], [], [], 'b-', label='Drone trajectory')
+    plat_traj, = ax.plot([], [], [], 'r--', label='Platform trajectory')
+    quad_pos, = ax.plot([], [], [], 'bo', markersize=8, label='Drone')
+    plat_surface, = ax.plot([], [], [], 'g-', linewidth=5, label='Platform surface')
     
     l = Config.Termination.SUCCESS_XY_ERR_MAX
     corners = np.array([[l, -l], [l, l], [-l, l], [-l, -l], [l, -l]])

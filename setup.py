@@ -21,7 +21,7 @@ setup(
     entry_points={
         'console_scripts': [
             'offboard_control_takeoff_and_land = mpcland.offboard_control_TrajectorySetpoint:main',
-            'offboard_control_vehicler_rates_setpoint= mpcland.offboard_attitude:main',
+            'MPC_OffboardControl= mpcland.offboard_attitude_mpc:main',
         ],
     },
 )

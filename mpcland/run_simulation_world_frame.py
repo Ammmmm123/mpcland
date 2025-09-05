@@ -313,7 +313,7 @@ def create_animation(history: dict, output_dir: str, filename="simulation_animat
         R = np.array([[cos(psi), -sin(psi)], [sin(psi), cos(psi)]])
         rotated_corners = corners @ R.T + np.array([px, py])
         plat_surface.set_data_3d(rotated_corners[:, 0], rotated_corners[:, 1], [pz] * 5)
-        ax.set_title(f'时间: {history["time"][i]:.1f}s')
+        ax.set_title(f'time: {history["time"][i]:.1f}s')
         return quad_traj, plat_traj, quad_pos, plat_surface
 
     filepath = os.path.join(output_dir, filename)

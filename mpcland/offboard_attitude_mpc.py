@@ -4,13 +4,87 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 from px4_msgs.msg import OffboardControlMode, TrajectorySetpoint, VehicleCommand, SensorCombined,VehicleLocalPosition, VehicleStatus,VehicleRatesSetpoint
+from envs import QuadrotorLandingEnv
+from utils import QuadMPC
+import numpy as np
+import config.config as Config
+import run_simulation_world_frame as run_simulation
 
+#定义NED到ENU的转换函数
+def ned_to_enu(ned_coords):
+    """
+    将NED坐标系(North-East-Down)转换为ENU坐标系(East-North-Up)
+    
+    参数:
+    ned_coords: 包含NED坐标的元组、列表或numpy数组 (x_ned, y_ned, z_ned)
+                x_ned - 北向坐标
+                y_ned - 东向坐标
+                z_ned - 地向坐标（向下为正）
+    
+    返回:
+    enu_coords: 包含ENU坐标的numpy数组 (x_enu, y_enu, z_enu)
+                x_enu - 东向坐标
+                y_enu - 北向坐标
+                z_enu - 天向坐标（向上为正）
+    """
+    # 确保输入是numpy数组
+    ned = np.array(ned_coords)
+    
+    # 执行坐标系转换
+    # NED到ENU的转换矩阵:
+    # [0, 1,  0]
+    # [1, 0,  0]
+    # [0, 0, -1]
+    enu = np.array([
+        ned[1],  # 东 = 原来的东
+        ned[0],  # 北 = 原来的北
+        -ned[2]  # 上 = -原来的下
+    ])
+    
+    return enu
 
-class OffboardControl(Node):
+#定义FRD到FLU的角速度转换函数
+def frd_to_flu_angular_rates(frd_rates):
+    """
+    将FRD（前-右-下）机体坐标系的角速度转换为FLU（前-左-上）机体坐标系的角速度
+    
+    参数:
+    frd_rates: 包含FRD角速度的元组、列表或numpy数组 (p_frd, q_frd, r_frd)
+               p_frd - 绕FRD X轴（前向）的滚转角速度
+               q_frd - 绕FRD Y轴（右向）的俯仰角速度
+               r_frd - 绕FRD Z轴（下向）的偏航角速度
+    
+    返回:
+    flu_rates: 包含FLU角速度的numpy数组 (p_flu, q_flu, r_flu)
+               p_flu - 绕FLU X轴（前向）的滚转角速度
+               q_flu - 绕FLU Y轴（左向）的俯仰角速度
+               r_flu - 绕FLU Z轴（上向）的偏航角速度
+    """
+    # 确保输入是numpy数组
+    frd = np.array(frd_rates)
+    
+    # FRD到FLU的角速度转换
+    # X轴（滚转）方向相同，保持不变
+    # Y轴（俯仰）方向相反，取负
+    # Z轴（偏航）方向相反，取负
+    flu = np.array([
+        frd[0],   # p_flu = p_frd (滚转角速度不变)
+        -frd[1],  # q_flu = -q_frd (俯仰角速度反向)
+        -frd[2]   # r_flu = -r_frd (偏航角速度反向)
+    ])
+    
+    return flu
+    
+class MPC_OffboardControl(Node):
     """Node for controlling a vehicle in offboard mode."""
 
-    def __init__(self) -> None:
-        super().__init__('offboard_control_vehicler_rates_setpoint')
+    def __init__(self,env: QuadrotorLandingEnv, mpc_solver: QuadMPC, simulation_params: dict) -> None:
+        super().__init__('MPC_OffboardControl')
+
+        #传入环境、MPC求解器和仿真参数
+        self.env = env
+        self.mpc_solver = mpc_solver
+        self.simulation_params = simulation_params
 
         # Configure QoS profile for publishing and subscribing
         qos_profile = QoSProfile(
@@ -48,7 +122,7 @@ class OffboardControl(Node):
 
         # Create a timer to publish control commands
         self.timer = self.create_timer(0.08, self.timer_callback)
-
+    
     def vehicle_local_position_callback(self, vehicle_local_position):
         """Callback function for vehicle_local_position topic subscriber."""
         self.vehicle_local_position = vehicle_local_position
@@ -172,9 +246,26 @@ class OffboardControl(Node):
 
 
 def main(args=None) -> None:
+
+    # --- 1. 模拟参数 ---
+    simulation_params = {
+        'quad_init_position': np.array([0.0, 0.0, 5.0]),
+        'quad_init_velocity': np.array([0.0, 0.0, 0.0]),
+        'quad_init_quaternions': run_simulation.euler_to_quaternion(0, 0, np.deg2rad(0)),
+        
+        'platform_init_state': np.array([0.0, 0.0, 0.8, np.deg2rad(30)]),
+        'platform_u1': 0.2,
+        'platform_u2': np.deg2rad(-30.0)
+    }
+
+    # --- 2. 初始化环境和MPC控制器 ---
+    env = QuadrotorLandingEnv(dt=Config.DELTA_T)
+    mpc_solver = QuadMPC(horizon=Config.MPC.HORIZON, dt=Config.DELTA_T)
+
+    # --- 3. 创建ROS节点 ---
     print('Starting offboard control node...')
     rclpy.init(args=args)
-    offboard_control = OffboardControl()
+    offboard_control = MPC_OffboardControl(env,mpc_solver,simulation_params)
     rclpy.spin(offboard_control)
     offboard_control.destroy_node()
     rclpy.shutdown()

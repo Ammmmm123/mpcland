@@ -3,14 +3,51 @@
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
-from px4_msgs.msg import OffboardControlMode, TrajectorySetpoint, VehicleCommand, SensorCombined,VehicleLocalPosition, VehicleStatus,VehicleRatesSetpoint
+from px4_msgs.msg import OffboardControlMode, TrajectorySetpoint, VehicleCommand, SensorCombined,VehicleLocalPosition, VehicleStatus,VehicleRatesSetpoint,VehicleAttitude
 from envs import QuadrotorLandingEnv
 from utils import QuadMPC
 import numpy as np
 import config.config as Config
 import run_simulation_world_frame as run_simulation
 
-#定义NED到ENU的转换函数
+
+# ==============================================================================
+# 辅助函数 - 坐标系转换和归一化处理
+# ==============================================================================
+def frd_ned_to_flu_enu(q_frd_ned):
+    """
+    将FRD到NED的四元数转换为FLU到ENU的四元数。
+    
+    参数:
+        q_frd_ned (list或np.ndarray): 四元数 [w, x, y, z]（Hamilton约定，顺序为w, x, y, z）
+    
+    返回:
+        np.ndarray: 转换后的四元数 [w, x, y, z]（FLU到ENU）
+    """
+    # 提取四元数分量
+    w, x, y, z = q_frd_ned
+    
+    # 1. 将FRD到NED转换为FLU到NED：反转y和z轴
+    # 这相当于在四元数中反转y和z分量的符号
+    q_flu_ned = np.array([w, x, -y, -z])
+    
+    # 2. 将NED坐标系转换为ENU坐标系：
+    #    ENU的x轴是NED的y轴，ENU的y轴是NED的x轴，ENU的z轴是NED的z轴的相反数。
+    # 对应的四元数转换可以通过一个固定的旋转实现，这里使用预定义的四元数
+    # 从NED到ENU的旋转四元数（绕z轴旋转90度，然后绕新的x轴旋转180度）
+    q_ned_enu = np.array([0.5, -0.5, 0.5, -0.5])  # 预计算的四元数
+    
+    # 组合旋转：q_flu_enu = q_ned_enu * q_flu_ned
+    # 四元数乘法（注意顺序：q_ned_enu * q_flu_ned）
+    w1, x1, y1, z1 = q_ned_enu
+    w2, x2, y2, z2 = q_flu_ned
+    w_new = w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2
+    x_new = w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2
+    y_new = w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2
+    z_new = w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2
+    
+    return np.array([w_new, x_new, y_new, z_new])
+
 def ned_to_enu(ned_coords):
     """
     将NED坐标系(North-East-Down)转换为ENU坐标系(East-North-Up)
@@ -43,7 +80,6 @@ def ned_to_enu(ned_coords):
     
     return enu
 
-#定义FRD到FLU的角速度转换函数
 def frd_to_flu_angular_rates(frd_rates):
     """
     将FRD（前-右-下）机体坐标系的角速度转换为FLU（前-左-上）机体坐标系的角速度
@@ -62,7 +98,7 @@ def frd_to_flu_angular_rates(frd_rates):
     """
     # 确保输入是numpy数组
     frd = np.array(frd_rates)
-    
+     
     # FRD到FLU的角速度转换
     # X轴（滚转）方向相同，保持不变
     # Y轴（俯仰）方向相反，取负
@@ -75,16 +111,82 @@ def frd_to_flu_angular_rates(frd_rates):
     
     return flu
     
+#归一化FLU角速度 TO FRD角速度
+def flu_normalized_to_frd_omega(flu_normalized):
+    """
+    将FLU（前-左-上）机体坐标系的归一化角速度转换为FRD（前-右-下）机体坐标系的角速度
+    
+    参数:
+    flu_normalized: 包含FLU归一化角速度的元组、列表或numpy数组 (p_flu_norm, q_flu_norm, r_flu_norm)
+                    p_flu_norm - 绕FLU X轴（前向）的归一化滚转角速度 [-1, 1]
+                    q_flu_norm - 绕FLU Y轴（左向）的归一化俯仰角速度 [-1, 1]
+                    r_flu_norm - 绕FLU Z轴（上向）的归一化偏航角速度 [-1, 1]
+    
+    返回:
+    frd_omega: 包含FRD角速度的numpy数组 (p_frd, q_frd, r_frd)
+               p_frd - 绕FRD X轴（前向）的滚转角速度 (rad/s)
+               q_frd - 绕FRD Y轴（右向）的俯仰角速度 (rad/s)
+               r_frd - 绕FRD Z轴（下向）的偏航角速度 (rad/s)
+    """
+    # 确保输入是numpy数组
+    flu_norm = np.array(flu_normalized)
+    
+    # 确保输入值在[-1, 1]范围内
+    flu_norm = np.clip(flu_norm, -1.0, 1.0)
+    
+    # FLU到FRD的角速度转换
+    # X轴（滚转）方向相同，保持不变
+    # Y轴（俯仰）方向相反，取负
+    # Z轴（偏航）方向相反，取负
+    frd_norm = np.array([
+        flu_norm[0],   # p_frd_norm = p_flu_norm (滚转角速度不变)
+        -flu_norm[1],  # q_frd_norm = -q_flu_norm (俯仰角速度反向)
+        -flu_norm[2]   # r_frd_norm = -r_flu_norm (偏航角速度反向)
+    ])
+    
+    # 将归一化值转换为实际角速度
+    frd_omega = frd_norm * Config.Quadrotor.OMEGA_MAX
+    
+    return frd_omega
+
+# ==============================================================================
+# MPC Offboard Control Node 建立
+# ==============================================================================
+
 class MPC_OffboardControl(Node):
     """Node for controlling a vehicle in offboard mode."""
 
     def __init__(self,env: QuadrotorLandingEnv, mpc_solver: QuadMPC, simulation_params: dict) -> None:
         super().__init__('MPC_OffboardControl')
 
+    # ==============================================================================
+    # MPC参数传入
+    # ==============================================================================
+
         #传入环境、MPC求解器和仿真参数
         self.env = env
         self.mpc_solver = mpc_solver
         self.simulation_params = simulation_params
+
+        #初始化环境和历史记录
+        reset_params = {k: v for k, v in self.simulation_params.items() if 'quad' in k or 'platform_init' in k}
+        self.platform_control = np.array([self.simulation_params['platform_u1'], self.simulation_params['platform_u2']])  
+        self.obs, self.info = self.env.reset(**reset_params)
+        self.history = {
+            'time': [], 'quad_pos': [], 'quad_vel': [], 'quad_quat': [],
+            'plat_pos': [], 'plat_vel': [], 'plat_psi': [],
+            'rel_pos': [], 'control_input': []
+        }
+        
+        # 预加载MPC代价函数矩阵
+        self.nx, self.nu, self.N = self.mpc_solver.nx, self.mpc_solver.nu, self.mpc_solver.N
+        self.q_weights = np.array(Config.MPC.STATE_WEIGHTS)   # 状态权重向量
+        self.r_weights = np.array(Config.MPC.CONTROL_WEIGHTS) # 控制权重向量
+        self.step=0
+
+    # ==============================================================================
+    # px4通信接口建立
+    # ==============================================================================
 
         # Configure QoS profile for publishing and subscribing
         qos_profile = QoSProfile(
@@ -111,17 +213,20 @@ class MPC_OffboardControl(Node):
             VehicleStatus, '/fmu/out/vehicle_status_v1', self.vehicle_status_callback, qos_profile)
         self.sensor_combined_subscriber = self.create_subscription(
             SensorCombined, '/fmu/out/sensor_combined', self.sensor_combined_callback, qos_profile)
+        self.vehicle_attitude_subscriber = self.create_subscription(
+            VehicleAttitude, '/fmu/out/vehicle_attitude', self.vehicle_attitude_callback, qos_profile)
 
         # Initialize variables
         self.offboard_setpoint_counter = 0
         self.vehicle_local_position = VehicleLocalPosition()
         self.vehicle_status = VehicleStatus()
         self.sensor_combined = SensorCombined()
+        self.vehicle_attitude = VehicleAttitude()
         self.takeoff_height = -5.0
         self.mode=False  #True:角速度-推力控制模式 False:位置控制模式
 
         # Create a timer to publish control commands
-        self.timer = self.create_timer(0.08, self.timer_callback)
+        self.timer = self.create_timer(Config.DELTA_T, self.timer_callback)
     
     def vehicle_local_position_callback(self, vehicle_local_position):
         """Callback function for vehicle_local_position topic subscriber."""
@@ -134,6 +239,10 @@ class MPC_OffboardControl(Node):
     def sensor_combined_callback(self, sensor_combined):
         """Callback function for sensor_combined topic subscriber."""
         self.sensor_combined = sensor_combined    
+
+    def vehicle_attitude_callback(self, vehicle_attitude):
+        """Callback function for vehicle_attitude topic subscriber."""
+        self.vehicle_attitude = vehicle_attitude
 
     def arm(self):
         """Send an arm command to the vehicle."""
@@ -192,17 +301,19 @@ class MPC_OffboardControl(Node):
         self.trajectory_setpoint_publisher.publish(msg)
         self.get_logger().info(f"发送位置控制指令： {[x, y, z]}")
 
-    def publish_rates_setpoint(self, roll: float, pitch: float, yaw: float):
+    def publish_rates_setpoint(self,thhrust_z:float, roll: float, pitch: float, yaw: float):
         """Publish the rates setpoint."""
+        thhrust_z = np.clip(thhrust_z, -1.0, 1.0)
         msg = VehicleRatesSetpoint()
         msg.roll = roll
         msg.pitch = pitch
         msg.yaw = yaw
-        msg.thrust_body =[0.0, 0.0, -0.729]  # Set a constant thrust value
+        msg.thrust_body =[0.0, 0.0, -thhrust_z]  # Set a constant thrust value起飞值-0.7289
         msg.timestamp = int(self.get_clock().now().nanoseconds / 1000)
         msg.reset_integral = False
         self.vehicle_rates_setpoint_publisher.publish(msg)
         self.get_logger().info('发送角速度-推力控制指令...')
+        self.get_logger().info(str(self.vehicle_local_position.z))
 
     def publish_vehicle_command(self, command, **params) -> None:
         """Publish a vehicle command."""
@@ -223,23 +334,98 @@ class MPC_OffboardControl(Node):
         msg.timestamp = int(self.get_clock().now().nanoseconds / 1000)
         self.vehicle_command_publisher.publish(msg)
 
+    # ==============================================================================
+    # 回调函数--定时执行actions
+    # ==============================================================================
+
     def timer_callback(self) -> None:
         """Callback function for the timer."""
+
+        #发送心跳信号，保持offboard模式
         self.publish_offboard_control_heartbeat_signal(self.mode)
-        
+
+        #发送10次心跳信号后，切换到offboard模式并解锁
         if self.offboard_setpoint_counter == 10:
             self.engage_offboard_mode()
             self.arm()
 
-        if self.vehicle_local_position.z > self.takeoff_height and self.vehicle_status.nav_state == VehicleStatus.NAVIGATION_STATE_OFFBOARD:
+        if self.vehicle_local_position.z > self.takeoff_height and self.vehicle_status.nav_state == VehicleStatus.NAVIGATION_STATE_OFFBOARD and self.mode==False:
             self.publish_position_setpoint(0.0, 0.0, self.takeoff_height)
-            
-        elif self.vehicle_local_position.z <= self.takeoff_height:
-            # self.land()
-            # # exit(0)
-            self.mode=True  #切换到角速度-推力控制模式
-            self.publish_rates_setpoint(0.0, 0.0, 0.5)
 
+            
+        elif self.vehicle_local_position.z <= self.takeoff_height or self.mode==True:
+            self.mode=True  #切换到角速度-推力控制模式
+            self.get_logger().info('进入跟踪降落模式...')
+            # 步骤 3.1: 获取当前世界状态            
+            quad_world_state = np.concatenate([
+                ned_to_enu([self.vehicle_local_position.x,
+                self.vehicle_local_position.y,
+                self.vehicle_local_position.z]), 
+                ned_to_enu([self.vehicle_local_position.vx,
+                self.vehicle_local_position.vy,
+                self.vehicle_local_position.vz]), 
+                frd_ned_to_flu_enu(self.vehicle_attitude.q)]
+            )
+            current_platform_state = self.env.platform.state
+
+            print(quad_world_state) 
+            # 步骤 3.2: 预测平台未来轨迹，并生成MPC参考轨迹 (调用核心算法)
+            platform_traj_pred = run_simulation.predict_platform_trajectory_world(
+                current_platform_state, self.platform_control, self.N, self.env.dt
+            )
+            x_ref_val = run_simulation.generate_mpc_reference_trajectory_world(
+                quad_world_state, platform_traj_pred, self.N
+            )
+
+            # 步骤 3.3: 构建当前步的代价函数参数
+            Q_nlp_val = np.concatenate([
+                np.zeros(self.nx),                  # X_0 (初始状态) 的代价为0
+                np.tile(2 * self.q_weights, self.N),     # X_1 到 X_N 的状态代价
+                np.tile(2 * self.r_weights, self.N)      # U_0 到 U_{N-1} 的控制代价
+            ])
+
+            p_nlp_list = [np.zeros(self.nx)] # 初始状态x0无线性代价
+            for k in range(self.N):
+                # 使用向量进行元素级乘法，等效于 Q @ x_ref，但效率更高
+                p_nlp_list.append(-2 * self.q_weights * x_ref_val[:, k])
+            p_nlp_list.append(np.zeros(self.nu * self.N)) # 控制量 u 无线性代价
+            p_nlp_val = np.concatenate(p_nlp_list)
+            print(quad_world_state)
+            # 步骤 3.4: 调用MPC求解器获取最优控制输入
+            u_opt_quad = self.mpc_solver.solve(quad_world_state, Q_nlp_val, p_nlp_val)
+
+            # 步骤 3.5: 将控制指令应用于环境，并执行一步仿真
+            action_quad=flu_normalized_to_frd_omega(u_opt_quad[1:])
+            self.publish_rates_setpoint(u_opt_quad[0],action_quad[0],action_quad[1],action_quad[2])
+
+            action = {'quadrotor': u_opt_quad, 'platform': self.platform_control}
+            rel_obs, self.obs, terminated, truncated, info = self.env.step(action)
+            
+            # 步骤 3.6: 记录当前步的数据
+            self.history['time'].append(self.step * self.env.dt)
+            self.history['quad_pos'].append(info['quadrotor']['position'])
+            self.history['quad_vel'].append(info['quadrotor']['velocity'])
+            self.history['quad_quat'].append(info['quadrotor']['quaternions'])
+            self.history['plat_pos'].append(info['platform']['position'])
+            self.history['plat_vel'].append(info['platform']['velocity'])
+            self.history['plat_psi'].append(info['platform']['psi'])
+            self.history['rel_pos'].append(rel_obs[:3])
+            self.history['control_input'].append(u_opt_quad)
+
+            # self.publish_rates_setpoint(0.0, 0.0, 0.5)
+            print(self.step)
+            self.step+=1
+
+
+            if terminated or truncated or self.vehicle_local_position.z > -1.0 :
+                self.land()
+                for key, val in self.history.items():
+                    self.history[key] = np.array(val)
+                    # --- 4. 生成并保存结果 ---
+                output_directory = "simulation_results_world_frame"
+                run_simulation.plot_results(self.history, output_directory)
+                run_simulation.create_animation(self.history, output_directory)
+                exit(0)
 
         if self.offboard_setpoint_counter < 11:
             self.offboard_setpoint_counter += 1

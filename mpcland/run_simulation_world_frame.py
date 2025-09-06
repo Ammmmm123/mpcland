@@ -195,7 +195,7 @@ def run_mpc_simulation(env: QuadrotorLandingEnv, mpc_solver: QuadMPC, simulation
             p_nlp_list.append(-2 * q_weights * x_ref_val[:, k])
         p_nlp_list.append(np.zeros(nu * N)) # 控制量 u 无线性代价
         p_nlp_val = np.concatenate(p_nlp_list)
-
+        print(quad_world_state)
         # 步骤 3.4: 调用MPC求解器获取最优控制输入
         u_opt_quad = mpc_solver.solve(quad_world_state, Q_nlp_val, p_nlp_val)
 

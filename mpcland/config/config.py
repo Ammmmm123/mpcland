@@ -26,9 +26,9 @@ class Quadrotor:
     # 最大推力 = THRUST_TO_WEIGHT_RATIO * MASS * GRAVITY
     THRUST_TO_WEIGHT_RATIO = 1.3717
     # 三个轴上的最大角速度 (rad/s)，用于归一化MPC的控制输入。
-    OMEGA_MAX = np.array([3.0, 3.0, 0.5])
+    OMEGA_MAX = np.array([0.6, 0.6, 0.3])  # [wx_max, wy_max, wz_max]
     # 归一化推力的范围。MPC输出的推力值将被限制在该范围内。
-    THRUST_MIN = 0.3  # 最小推力，避免电机停转。
+    THRUST_MIN = 0.7  # 最小推力，避免电机停转。
     THRUST_MAX = 1.0  # 最大推力，对应悬停推力的 THRUST_TO_WEIGHT_RATIO 倍。
 
 # =============== 移动平台物理参数 ===============
@@ -51,19 +51,19 @@ class MPC:
         # 位置误差权重 [x, y, z]
         10.0, 10.0, 20.0,
         # 速度误差权重 [vx, vy, vz]
-        1.0, 1.0, 2.0,
+        3.0, 3.0, 2.0,
         # 姿态误差权重 (四元数) [qw, qx, qy, qz]
         # 重点惩罚姿态偏差，特别是qx, qy，因为它们代表了roll和pitch。
-        0.5, 5.0, 5.0, 0.5
+        0.3, 4.0, 4.0, 1.5
     ]
 
     # --- 控制权重 (Control Weights) ---
     # 用于惩罚控制量的大小，目的是让控制输出更平滑，节省能量。
     CONTROL_WEIGHTS = [
         # 推力变化惩罚
-        0.1,
+        0.25,
         # 角速度变化惩罚 [wx, wy, wz]
-        0.2, 0.2, 0.1
+        1.5, 1.5, 1.2
     ]
 
 # =============== 终止条件参数 ===============
@@ -71,7 +71,7 @@ class Termination:
     """定义了仿真结束的条件。"""
     # --- 成功条件 ---
     SUCCESS_Z_MAX = 0.05  # 成功着陆时，无人机与平台的最大相对高度 (m)
-    SUCCESS_XY_ERR_MAX = 0.15  # 成功着陆时，无人机在平台坐标系下的最大水平误差 (m)
+    SUCCESS_XY_ERR_MAX = 0.10  # 成功着陆时，无人机在平台坐标系下的最大水平误差 (m)
 
     # --- 失败条件 ---
     CRASH_Z_MIN = -0.2  # 无人机低于平台表面此距离，视为坠毁 (m)

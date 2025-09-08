@@ -14,39 +14,48 @@ import run_simulation_world_frame as run_simulation
 # ==============================================================================
 # 辅助函数 - 坐标系转换和归一化处理
 # ==============================================================================
+
+import math
+
+def quat_mul(q1, q2):
+    """Hamilton convention quaternion multiplication: q = q1 ⊗ q2, both [w,x,y,z]."""
+    w1, x1, y1, z1 = q1
+    w2, x2, y2, z2 = q2
+    return [
+        w1*w2 - x1*x2 - y1*y2 - z1*z2,
+        w1*x2 + x1*w2 + y1*z2 - z1*y2,
+        w1*y2 - x1*z2 + y1*w2 + z1*x2,
+        w1*z2 + x1*y2 - y1*x2 + z1*w2,
+    ]
+
+def quat_norm(q):
+    w, x, y, z = q
+    n = math.sqrt(w*w + x*x + y*y + z*z)
+    if n == 0:
+        raise ValueError("Zero-norm quaternion.")
+    return [w/n, x/n, y/n, z/n]
+
+def quat_from_axis_angle(axis, angle_rad):
+    """axis: iterable of length 3, angle in radians. Returns [w,x,y,z]."""
+    ax, ay, az = axis
+    half = 0.5 * angle_rad
+    s = math.sin(half)
+    return quat_norm([math.cos(half), ax*s, ay*s, az*s])
+
+# 预定义旋转四元数
+Q_X_180 = quat_from_axis_angle((1.0, 0.0, 0.0), math.pi)          # R_x(pi)
+Q_Z_90  = quat_from_axis_angle((0.0, 0.0, 1.0), math.pi * 0.5)    # R_z(pi/2)
+
 def frd_ned_to_flu_enu(q_frd_ned):
     """
-    将FRD到NED的四元数转换为FLU到ENU的四元数。
-    
-    参数:
-        q_frd_ned (list或np.ndarray): 四元数 [w, x, y, z]（Hamilton约定，顺序为w, x, y, z）
-    
-    返回:
-        np.ndarray: 转换后的四元数 [w, x, y, z]（FLU到ENU）
+    Convert a quaternion from FRD->NED convention to FLU->ENU convention.
+    Input/Output quaternions are [w, x, y, z], Hamilton, active rotations.
     """
-    # 提取四元数分量
-    w, x, y, z = q_frd_ned
-    
-    # 1. 将FRD到NED转换为FLU到NED：反转y和z轴
-    # 这相当于在四元数中反转y和z分量的符号
-    q_flu_ned = np.array([w, x, -y, -z])
-    
-    # 2. 将NED坐标系转换为ENU坐标系：
-    #    ENU的x轴是NED的y轴，ENU的y轴是NED的x轴，ENU的z轴是NED的z轴的相反数。
-    # 对应的四元数转换可以通过一个固定的旋转实现，这里使用预定义的四元数
-    # 从NED到ENU的旋转四元数（绕z轴旋转90度，然后绕新的x轴旋转180度）
-    q_ned_enu = np.array([0.5, -0.5, 0.5, -0.5])  # 预计算的四元数
-    
-    # 组合旋转：q_flu_enu = q_ned_enu * q_flu_ned
-    # 四元数乘法（注意顺序：q_ned_enu * q_flu_ned）
-    w1, x1, y1, z1 = q_ned_enu
-    w2, x2, y2, z2 = q_flu_ned
-    w_new = w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2
-    x_new = w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2
-    y_new = w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2
-    z_new = w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2
-    
-    return np.array([w_new, x_new, y_new, z_new])
+    q = quat_norm(q_frd_ned)
+    # q_target = q_z90 ⊗ q_x180 ⊗ q ⊗ q_x180
+    q_out = quat_mul(Q_Z_90, quat_mul(Q_X_180, quat_mul(q, Q_X_180)))
+    return quat_norm(q_out)
+
 
 def ned_to_enu(ned_coords):
     """
@@ -414,24 +423,20 @@ class MPC_OffboardControl(Node):
             self.history['rel_pos'].append(rel_obs[:3])
             self.history['control_input'].append(u_opt_quad)
 
-            # self.history['time'].append(self.step * self.env.dt)
-            # self.history['quad_pos'].append(ned_to_enu([self.vehicle_local_position.x,self.vehicle_local_position.y,self.vehicle_local_position.z]))
-            # self.history['quad_vel'].append(ned_to_enu([self.vehicle_local_position.vx,self.vehicle_local_position.vy,self.vehicle_local_position.vz]))
-            # self.history['quad_quat'].append(info['quadrotor']['quaternions'])
-            # self.history['plat_pos'].append(info['platform']['position'])
-            # self.history['plat_vel'].append(info['platform']['velocity'])
-            # self.history['plat_psi'].append(info['platform']['psi'])
-            # self.history['rel_pos'].append(rel_obs[:3])
-            # self.history['control_input'].append(u_opt_quad)
-
-            # self.publish_rates_setpoint(0.0, 0.0, 0.5)
             self.step+=1
 
 
-            if terminated or truncated or self.vehicle_local_position.z > -1.0 :
-                self.land()
+            if terminated or truncated  :
+
+                if info["success"]==True:
+                    self.get_logger().info('降落成功，任务完成！')
+                    self.disarm()                
+                else:
+                    self.land()
+                    self.get_logger().info('降落失败，切换到自动降落模式！')
                 for key, val in self.history.items():
                     self.history[key] = np.array(val)
+
                     # --- 4. 生成并保存结果 ---
                 output_directory = "simulation_results_world_frame"
                 run_simulation.plot_results(self.history, output_directory)

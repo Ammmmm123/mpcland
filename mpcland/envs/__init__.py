@@ -9,5 +9,6 @@ __all__ = [
     'QuadrotorLandingEnv',
     'QuadrotorDynamics',
     'MovingPlatformDynamics',
-    'PlatformState'  # 暴露PlatformState，因为test脚本需要它
+    'PlatformState',
+    'QuadrotorLandingEnv1'# 暴露PlatformState，因为test脚本需要它
 ]

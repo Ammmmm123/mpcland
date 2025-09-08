@@ -1,12 +1,8 @@
-"""
-四旋翼无人机着陆环境（已废弃奖励和观测计算，仅用作仿真器）
-"""
 import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
 import config.config as Config
-from .dynamics import QuadrotorDynamics, MovingPlatformDynamics, quaternion_multiply, PlatformState
-
+from .dynamics import  MovingPlatformDynamics, quaternion_multiply, PlatformState, QuadrotorState
 
 class QuadrotorLandingEnv(gym.Env):
     """
@@ -21,7 +17,7 @@ class QuadrotorLandingEnv(gym.Env):
         self.max_steps = int(Config.MAX_EPISODE_TIME / self.dt)
 
         # 初始化动力学模型
-        self.quadrotor = QuadrotorDynamics(None)
+        self.state=QuadrotorState(None,None,None)
         self.platform = MovingPlatformDynamics()
 
         # 定义动作空间（尽管MPC直接输出，但为保持Gym接口完整性而定义）
@@ -56,7 +52,7 @@ class QuadrotorLandingEnv(gym.Env):
         self.CRASH_Z_MIN = term_cfg.CRASH_Z_MIN
         self.CONTACT_Z_THRESH = term_cfg.CONTACT_Z_THRESH
         self.MAX_LANDING_VEL = term_cfg.MAX_LANDING_VEL
-
+ 
     def reset(self, *, seed=None, options=None,
               quad_init_position: np.ndarray,
               quad_init_velocity: np.ndarray,
@@ -68,7 +64,7 @@ class QuadrotorLandingEnv(gym.Env):
         super().reset(seed=seed)
 
         # 重置动力学模型
-        self.quadrotor.reset(quad_init_position, quad_init_velocity, quad_init_quaternions)
+        self.state.reset(quad_init_position, quad_init_velocity, quad_init_quaternions)
         self.platform.reset(platform_init_state)
 
         self.prev_platform_state = self.platform.state.copy()
@@ -87,11 +83,11 @@ class QuadrotorLandingEnv(gym.Env):
         self.steps_count += 1
 
         # 解析动作
-        quad_action = {'thrust': action['quadrotor'][0], 'omega': action['quadrotor'][1:4]}
+        quad_action = {'Position': action['quadrotor'][:3], 'Velocity': action['quadrotor'][3:6], 'Quaternion': action['quadrotor'][6:]}
         platform_action = {'u1': action['platform'][0], 'u2': action['platform'][1]}
 
         # 更新动力学状态
-        self.quadrotor.step(quad_action, self.dt)
+        self.state.reset(quad_action['Position'], quad_action['Velocity'], quad_action['Quaternion'])
         self.platform.step(platform_action, self.dt)
 
         # 检查终止条件
@@ -113,7 +109,7 @@ class QuadrotorLandingEnv(gym.Env):
         观测 = [10维相对状态] + [3维平台时序特征]
         """
         current_p_state = self.platform.state
-        q_state = self.quadrotor.state
+        q_state = self.state
 
         # --- Part 1: 计算10维相对状态 ---
 
@@ -193,7 +189,7 @@ class QuadrotorLandingEnv(gym.Env):
     def get_info(self, success=False):
         """返回包含所有绝对状态的详细信息字典。"""
         p_state = self.platform.state
-        q_state = self.quadrotor.state
+        q_state = self.state
         return {
             "quadrotor": {
                 "position": q_state.position,

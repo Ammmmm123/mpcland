@@ -11,10 +11,18 @@ import config.config as Config
 
 @dataclass
 class QuadrotorState:
-    """封装四旋翼无人机的状态向量。"""
-    position: np.ndarray  # 世界坐标系下的位置 [x, y, z]
-    velocity: np.ndarray  # 世界坐标系下的速度 [vx, vy, vz]
-    quaternions: np.ndarray  # 世界坐标系下的姿态四元数 [qw, qx, qy, qz]
+    def __init__(self, position=None, velocity=None, quaternions=None):
+
+        """封装四旋翼无人机的状态向量。"""
+        self.position = np.array(position) # 世界坐标系下的位置 [x, y, z]
+        self.velocity = np.array(velocity)# 世界坐标系下的速度 [vx, vy, vz]
+        self.quaternions = np.array(quaternions) # 世界坐标系下的姿态四元数 [qw, qx, qy, qz]
+
+    def reset(self, position, velocity, quaternions):
+        """初始化状态向量。"""
+        self.position = np.array(position)
+        self.velocity = np.array(velocity)
+        self.quaternions = np.array(quaternions)
 
     def copy(self):
         """创建当前状态的深拷贝，避免在传递中意外修改原始数据。"""

@@ -368,7 +368,7 @@ class MPC_OffboardControl(Node):
             )
             current_platform_state = self.env.platform.state
 
-            print(quad_world_state) 
+            print(f"当前无人机位置: {quad_world_state[:3]}")
             # 步骤 3.2: 预测平台未来轨迹，并生成MPC参考轨迹 (调用核心算法)
             platform_traj_pred = run_simulation.predict_platform_trajectory_world(
                 current_platform_state, self.platform_control, self.N, self.env.dt
@@ -390,15 +390,17 @@ class MPC_OffboardControl(Node):
                 p_nlp_list.append(-2 * self.q_weights * x_ref_val[:, k])
             p_nlp_list.append(np.zeros(self.nu * self.N)) # 控制量 u 无线性代价
             p_nlp_val = np.concatenate(p_nlp_list)
-            print(quad_world_state)
+
             # 步骤 3.4: 调用MPC求解器获取最优控制输入
             u_opt_quad = self.mpc_solver.solve(quad_world_state, Q_nlp_val, p_nlp_val)
-
+            print(f"最优控制输入: {u_opt_quad}")
             # 步骤 3.5: 将控制指令应用于环境，并执行一步仿真
             action_quad=flu_normalized_to_frd_omega(u_opt_quad[1:])
-            self.publish_rates_setpoint(u_opt_quad[0],action_quad[0],action_quad[1],action_quad[2])
+            print(f"转换后角速度: {action_quad}")
 
-            action = {'quadrotor': u_opt_quad, 'platform': self.platform_control}
+            self.publish_rates_setpoint(u_opt_quad[0],action_quad[0],action_quad[1],action_quad[2])
+            
+            action = {'quadrotor': quad_world_state, 'platform': self.platform_control}
             rel_obs, self.obs, terminated, truncated, info = self.env.step(action)
             
             # 步骤 3.6: 记录当前步的数据
@@ -412,8 +414,17 @@ class MPC_OffboardControl(Node):
             self.history['rel_pos'].append(rel_obs[:3])
             self.history['control_input'].append(u_opt_quad)
 
+            # self.history['time'].append(self.step * self.env.dt)
+            # self.history['quad_pos'].append(ned_to_enu([self.vehicle_local_position.x,self.vehicle_local_position.y,self.vehicle_local_position.z]))
+            # self.history['quad_vel'].append(ned_to_enu([self.vehicle_local_position.vx,self.vehicle_local_position.vy,self.vehicle_local_position.vz]))
+            # self.history['quad_quat'].append(info['quadrotor']['quaternions'])
+            # self.history['plat_pos'].append(info['platform']['position'])
+            # self.history['plat_vel'].append(info['platform']['velocity'])
+            # self.history['plat_psi'].append(info['platform']['psi'])
+            # self.history['rel_pos'].append(rel_obs[:3])
+            # self.history['control_input'].append(u_opt_quad)
+
             # self.publish_rates_setpoint(0.0, 0.0, 0.5)
-            print(self.step)
             self.step+=1
 
 
@@ -439,7 +450,7 @@ def main(args=None) -> None:
         'quad_init_velocity': np.array([0.0, 0.0, 0.0]),
         'quad_init_quaternions': run_simulation.euler_to_quaternion(0, 0, np.deg2rad(0)),
         
-        'platform_init_state': np.array([0.0, 0.0, 0.8, np.deg2rad(30)]),
+        'platform_init_state': np.array([3.0, 5.0, 0.8, np.deg2rad(30)]),
         'platform_u1': 0.2,
         'platform_u2': np.deg2rad(-30.0)
     }

@@ -172,8 +172,8 @@ def run_mpc_simulation(env: QuadrotorLandingEnv, mpc_solver: QuadMPC, simulation
             info['quadrotor']['quaternions']
         ])
         current_platform_state = env.platform.state
+        print(f"当前无人机位置: {quad_world_state[:3]}")
 
-        print(quad_world_state) 
         # 步骤 3.2: 预测平台未来轨迹，并生成MPC参考轨迹 (调用核心算法)
         platform_traj_pred = predict_platform_trajectory_world(
             current_platform_state, platform_control, N, env.dt
@@ -195,10 +195,10 @@ def run_mpc_simulation(env: QuadrotorLandingEnv, mpc_solver: QuadMPC, simulation
             p_nlp_list.append(-2 * q_weights * x_ref_val[:, k])
         p_nlp_list.append(np.zeros(nu * N)) # 控制量 u 无线性代价
         p_nlp_val = np.concatenate(p_nlp_list)
-        print(quad_world_state)
+
         # 步骤 3.4: 调用MPC求解器获取最优控制输入
         u_opt_quad = mpc_solver.solve(quad_world_state, Q_nlp_val, p_nlp_val)
-
+        print(f"最优控制输入: {u_opt_quad}")
         # 步骤 3.5: 将控制指令应用于环境，并执行一步仿真
         action = {'quadrotor': u_opt_quad, 'platform': platform_control}
         rel_obs, _, terminated, truncated, info = env.step(action)
@@ -216,6 +216,7 @@ def run_mpc_simulation(env: QuadrotorLandingEnv, mpc_solver: QuadMPC, simulation
 
         # 步骤 3.7: 检查终止条件
         if terminated or truncated:
+            
             break
 
     print(f"仿真结束于第 {step + 1} 步。成功状态: {info.get('success', False)}")
@@ -335,7 +336,7 @@ if __name__ == "__main__":
         'quad_init_velocity': np.array([0.0, 0.0, 0.0]),
         'quad_init_quaternions': euler_to_quaternion(0, 0, np.deg2rad(0)),
         
-        'platform_init_state': np.array([0.0, 0.0, 0.8, np.deg2rad(30)]),
+        'platform_init_state': np.array([5.0, 3.0, 0.8, np.deg2rad(30)]),
         'platform_u1': 0.2,
         'platform_u2': np.deg2rad(-30.0)
     }

@@ -4,8 +4,10 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 from px4_msgs.msg import OffboardControlMode, TrajectorySetpoint, VehicleCommand, SensorCombined,VehicleLocalPosition, VehicleStatus,VehicleRatesSetpoint,VehicleAttitude
+
 from envs import QuadrotorLandingEnv
 from utils import QuadMPC
+import math
 import numpy as np
 import config.config as Config
 import run_simulation_world_frame as run_simulation
@@ -15,7 +17,7 @@ import run_simulation_world_frame as run_simulation
 # 辅助函数 - 坐标系转换和归一化处理
 # ==============================================================================
 
-import math
+
 
 def quat_mul(q1, q2):
     """Hamilton convention quaternion multiplication: q = q1 ⊗ q2, both [w,x,y,z]."""
@@ -369,10 +371,10 @@ class MPC_OffboardControl(Node):
             quad_world_state = np.concatenate([
                 ned_to_enu([self.vehicle_local_position.x,
                 self.vehicle_local_position.y,
-                self.vehicle_local_position.z]), 
+                self.vehicle_local_position.z]),
                 ned_to_enu([self.vehicle_local_position.vx,
                 self.vehicle_local_position.vy,
-                self.vehicle_local_position.vz]), 
+                self.vehicle_local_position.vz]),
                 frd_ned_to_flu_enu(self.vehicle_attitude.q)]
             )
             current_platform_state = self.env.platform.state
@@ -403,6 +405,7 @@ class MPC_OffboardControl(Node):
             # 步骤 3.4: 调用MPC求解器获取最优控制输入
             u_opt_quad = self.mpc_solver.solve(quad_world_state, Q_nlp_val, p_nlp_val)
             print(f"最优控制输入: {u_opt_quad}")
+
             # 步骤 3.5: 将控制指令应用于环境，并执行一步仿真
             action_quad=flu_normalized_to_frd_omega(u_opt_quad[1:])
             print(f"转换后角速度: {action_quad}")
@@ -419,7 +422,7 @@ class MPC_OffboardControl(Node):
             self.history['quad_quat'].append(info['quadrotor']['quaternions'])
             self.history['plat_pos'].append(info['platform']['position'])
             self.history['plat_vel'].append(info['platform']['velocity'])
-            self.history['plat_psi'].append(info['platform']['psi'])
+            self.history['plat_psi'].append(info['platform']['psi']) 
             self.history['rel_pos'].append(rel_obs[:3])
             self.history['control_input'].append(u_opt_quad)
 
@@ -430,6 +433,7 @@ class MPC_OffboardControl(Node):
 
                 if info["success"]==True:
                     self.get_logger().info('降落成功，任务完成！')
+                    self.land()
                     self.disarm()                
                 else:
                     self.land()
@@ -441,6 +445,7 @@ class MPC_OffboardControl(Node):
                 output_directory = "simulation_results_world_frame"
                 run_simulation.plot_results(self.history, output_directory)
                 run_simulation.create_animation(self.history, output_directory)
+                print(f"\n测试完成！所有结果已保存在 '{output_directory}' 文件夹中。")
                 exit(0)
 
         if self.offboard_setpoint_counter < 11:
@@ -455,9 +460,9 @@ def main(args=None) -> None:
         'quad_init_velocity': np.array([0.0, 0.0, 0.0]),
         'quad_init_quaternions': run_simulation.euler_to_quaternion(0, 0, np.deg2rad(0)),
         
-        'platform_init_state': np.array([3.0, 5.0, 0.8, np.deg2rad(30)]),
+        'platform_init_state': np.array([5.0, 5.0, 0.8, np.deg2rad(30)]),
         'platform_u1': 0.2,
-        'platform_u2': np.deg2rad(-30.0)
+        'platform_u2': np.deg2rad(10)
     }
 
     # --- 2. 初始化环境和MPC控制器 ---

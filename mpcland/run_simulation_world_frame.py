@@ -7,7 +7,7 @@ MPC控制器完整仿真与可视化程序 (世界坐标系规划)
     场景下运行无人机着陆任务，记录整个过程中的详细数据，并最终生成直观的分析
     图表和3D动画，以全面评估控制器的性能。
 
-核心控制策略 (与 debug_mpc_step_world_frame.py 完全一致):
+核心控制策略:
     1. 获取无人机和移动平台在统一世界坐标系下的绝对状态。
     2. 基于平台的动力学模型，在世界坐标系中预测其未来N步的运动轨迹。
     3. 生成一个同样在世界坐标系下的无人机参考轨迹，该轨迹旨在引导无人机平滑地
@@ -30,16 +30,15 @@ from mpl_toolkits.mplot3d import Axes3D
 from tqdm import tqdm
 
 # 从项目中导入必要的模块
-from envs import QuadrotorLandingEnv, MovingPlatformDynamics, PlatformState
-from utils import QuadMPC
+from envs import  MovingPlatformDynamics, PlatformState
 import config.config as Config
 
-# 设置matplotlib以正确显示中文和负号
+# 设置matplotlib以正确显示中文和负号(linux系统只能用英文)
 # plt.rcParams['font.sans-serif'] = ['SimHei']
 # plt.rcParams['axes.unicode_minus'] = False
 
 # ==============================================================================
-# 辅助函数 (与 debug_mpc_step_world_frame.py 完全一致)
+# 辅助函数 
 # ==============================================================================
 
 def euler_to_quaternion(roll: float, pitch: float, yaw: float) -> np.ndarray:
@@ -63,7 +62,7 @@ def calc_vz_ref(current_relative_z: float) -> float:
         return -0.2
 
 # ==============================================================================
-# 核心算法模块 (与 debug_mpc_step_world_frame.py 完全一致)
+# 核心算法模块 
 # ==============================================================================
 
 def predict_platform_trajectory_world(
@@ -128,105 +127,6 @@ def generate_mpc_reference_trajectory_world(
         x_ref[:, k] = np.concatenate([p_ref_k, v_ref_k, q_ref_k])
 
     return x_ref
-
-# ==============================================================================
-# 仿真与执行模块
-# ==============================================================================
-
-def run_mpc_simulation(env: QuadrotorLandingEnv, mpc_solver: QuadMPC, simulation_params: dict) -> dict:
-    """
-    运行完整的MPC闭环仿真，并返回包含所有历史数据的字典。
-
-    Args:
-        env (QuadrotorLandingEnv): 配置好的仿真环境实例。
-        mpc_solver (QuadMPC): MPC控制器实例。
-        simulation_params (dict): 包含场景所有初始条件的字典。
-
-    Returns:
-        dict: 包含时间、状态等历史序列的字典。
-    """
-    print("--- 开始运行仿真 ---")
-    # 1. 初始化环境和历史记录
-    reset_params = {k: v for k, v in simulation_params.items() if 'quad' in k or 'platform_init' in k}
-    platform_control = np.array([simulation_params['platform_u1'], simulation_params['platform_u2']])
-    
-    _, info = env.reset(**reset_params)
-    history = {
-        'time': [], 'quad_pos': [], 'quad_vel': [], 'quad_quat': [],
-        'plat_pos': [], 'plat_vel': [], 'plat_psi': [],
-        'rel_pos': [], 'control_input': []
-    }
-
-    # 2. 预加载MPC代价函数矩阵
-    nx, nu, N = mpc_solver.nx, mpc_solver.nu, mpc_solver.N
-    q_weights = np.array(Config.MPC.STATE_WEIGHTS)   # 状态权重向量
-    r_weights = np.array(Config.MPC.CONTROL_WEIGHTS) # 控制权重向量
-
-    # 3. 运行仿真主循环
-    max_steps = int(Config.MAX_EPISODE_TIME / Config.DELTA_T)
-    for step in tqdm(range(max_steps), desc="MPC仿真进度"):
-        # 步骤 3.1: 获取当前世界状态
-        quad_world_state = np.concatenate([
-            info['quadrotor']['position'],
-            info['quadrotor']['velocity'],
-            info['quadrotor']['quaternions']
-        ])
-        current_platform_state = env.platform.state
-        print(f"当前无人机位置: {quad_world_state[:3]}")
-
-        # 步骤 3.2: 预测平台未来轨迹，并生成MPC参考轨迹 (调用核心算法)
-        platform_traj_pred = predict_platform_trajectory_world(
-            current_platform_state, platform_control, N, env.dt
-        )
-        x_ref_val = generate_mpc_reference_trajectory_world(
-            quad_world_state, platform_traj_pred, N
-        )
-
-        # 步骤 3.3: 构建当前步的代价函数参数
-        Q_nlp_val = np.concatenate([
-            np.zeros(nx),                  # X_0 (初始状态) 的代价为0
-            np.tile(2 * q_weights, N),     # X_1 到 X_N 的状态代价
-            np.tile(2 * r_weights, N)      # U_0 到 U_{N-1} 的控制代价
-        ])
-
-        p_nlp_list = [np.zeros(nx)] # 初始状态x0无线性代价
-        for k in range(N):
-            # 使用向量进行元素级乘法，等效于 Q @ x_ref，但效率更高
-            p_nlp_list.append(-2 * q_weights * x_ref_val[:, k])
-        p_nlp_list.append(np.zeros(nu * N)) # 控制量 u 无线性代价
-        p_nlp_val = np.concatenate(p_nlp_list)
-
-        # 步骤 3.4: 调用MPC求解器获取最优控制输入
-        u_opt_quad = mpc_solver.solve(quad_world_state, Q_nlp_val, p_nlp_val)
-        print(f"最优控制输入: {u_opt_quad}")
-        # 步骤 3.5: 将控制指令应用于环境，并执行一步仿真
-        action = {'quadrotor': u_opt_quad, 'platform': platform_control}
-        rel_obs, _, terminated, truncated, info = env.step(action)
-        
-        # 步骤 3.6: 记录当前步的数据
-        history['time'].append(step * env.dt)
-        history['quad_pos'].append(info['quadrotor']['position'])
-        history['quad_vel'].append(info['quadrotor']['velocity'])
-        history['quad_quat'].append(info['quadrotor']['quaternions'])
-        history['plat_pos'].append(info['platform']['position'])
-        history['plat_vel'].append(info['platform']['velocity'])
-        history['plat_psi'].append(info['platform']['psi'])
-        history['rel_pos'].append(rel_obs[:3])
-        history['control_input'].append(u_opt_quad)
-
-        # 步骤 3.7: 检查终止条件
-        if terminated or truncated:
-            
-            break
-
-    print(f"仿真结束于第 {step + 1} 步。成功状态: {info.get('success', False)}")
-    print("--- 仿真完成 ---")
-    
-    # 将列表转换为numpy数组以便于后续处理
-    for key, val in history.items():
-        history[key] = np.array(val)
-    return history
-
 
 # ==============================================================================
 # 可视化模块
@@ -323,42 +223,3 @@ def create_animation(history: dict, output_dir: str, filename="simulation_animat
         anim.save(filepath, writer='pillow', fps=20, progress_callback=lambda i, n: pbar.update(1))
     plt.close(fig)
     print(f"动画已保存至: {filepath}")
-
-# ==============================================================================
-# 主程序入口
-# ==============================================================================
-if __name__ == "__main__":
-    
-    # --- 1. 定义测试场景 ---
-    # 在这里配置不同的初始条件和平台运动模式来测试控制器的鲁棒性。
-    simulation_params = {
-        'quad_init_position': np.array([0.0, 0.0, 5.0]),
-        'quad_init_velocity': np.array([0.0, 0.0, 0.0]),
-        'quad_init_quaternions': euler_to_quaternion(0, 0, np.deg2rad(0)),
-        
-        'platform_init_state': np.array([5.0, 3.0, 0.8, np.deg2rad(30)]),
-        'platform_u1': 0.2,
-        'platform_u2': np.deg2rad(-30.0)
-    }
-
-    print("=" * 60)
-    print("      MPC控制器完整仿真程序 (世界坐标系规划)")
-    print("=" * 60)
-    print("当前测试场景参数:")
-    for k, v in simulation_params.items():
-        print(f"  - {k:<25}: {np.round(v, 4) if isinstance(v, np.ndarray) else v}")
-    print("=" * 60)
-
-    # --- 2. 初始化环境和MPC控制器 ---
-    env = QuadrotorLandingEnv(dt=Config.DELTA_T)
-    mpc_solver = QuadMPC(horizon=Config.MPC.HORIZON, dt=Config.DELTA_T)
-
-    # --- 3. 运行仿真 ---
-    simulation_history = run_mpc_simulation(env, mpc_solver, simulation_params)
-
-    # --- 4. 生成并保存结果 ---
-    output_directory = "simulation_results_world_frame"
-    plot_results(simulation_history, output_directory)
-    create_animation(simulation_history, output_directory)
-
-    print(f"\n测试完成！所有结果已保存在 '{output_directory}' 文件夹中。")

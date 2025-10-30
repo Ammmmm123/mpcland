@@ -20,7 +20,21 @@ import run_simulation_world_frame as run_simulation
 
 
 def quat_mul(q1, q2):
-    """Hamilton convention quaternion multiplication: q = q1 ⊗ q2, both [w,x,y,z]."""
+    """
+    四元数乘法运算（Hamilton约定）
+    
+    功能：计算两个四元数的乘积 q_result = q1 ⊗ q2
+    
+    参数：
+        q1: 第一个四元数，格式为 [w, x, y, z]
+        q2: 第二个四元数，格式为 [w, x, y, z]
+    
+    返回：
+        四元数乘法的结果，格式为 [w, x, y, z]
+    
+    说明：
+        四元数乘法用于组合旋转变换，遵循Hamilton约定（非交换运算）
+    """
     w1, x1, y1, z1 = q1
     w2, x2, y2, z2 = q2
     return [
@@ -31,6 +45,20 @@ def quat_mul(q1, q2):
     ]
 
 def quat_norm(q):
+    """
+    四元数归一化
+    
+    功能：将四元数归一化为单位四元数（模长为1）
+    
+    参数：
+        q: 待归一化的四元数，格式为 [w, x, y, z]
+    
+    返回：
+        归一化后的单位四元数，格式为 [w, x, y, z]
+    
+    说明：
+        单位四元数用于表示旋转，归一化可消除数值计算误差
+    """
     w, x, y, z = q
     n = math.sqrt(w*w + x*x + y*y + z*z)
     if n == 0:
@@ -38,7 +66,21 @@ def quat_norm(q):
     return [w/n, x/n, y/n, z/n]
 
 def quat_from_axis_angle(axis, angle_rad):
-    """axis: iterable of length 3, angle in radians. Returns [w,x,y,z]."""
+    """
+    从旋转轴和旋转角构造四元数
+    
+    功能：根据给定的旋转轴和旋转角度生成对应的单位四元数
+    
+    参数：
+        axis: 旋转轴向量，长度为3的可迭代对象 (ax, ay, az)
+        angle_rad: 绕旋转轴的旋转角度（弧度制）
+    
+    返回：
+        表示该旋转的单位四元数，格式为 [w, x, y, z]
+    
+    说明：
+        这是轴角表示法到四元数的转换，常用于构造基本旋转变换
+    """
     ax, ay, az = axis
     half = 0.5 * angle_rad
     s = math.sin(half)
@@ -50,8 +92,22 @@ Q_Z_90  = quat_from_axis_angle((0.0, 0.0, 1.0), math.pi * 0.5)    # R_z(pi/2)
 
 def frd_ned_to_flu_enu(q_frd_ned):
     """
-    Convert a quaternion from FRD->NED convention to FLU->ENU convention.
-    Input/Output quaternions are [w, x, y, z], Hamilton, active rotations.
+    坐标系约定转换：FRD-NED → FLU-ENU
+    
+    功能：将四元数从PX4的坐标系约定（机体FRD、世界NED）转换为算法使用的约定（机体FLU、世界ENU）
+    
+    参数：
+        q_frd_ned: FRD到NED坐标系的旋转四元数，格式为 [w, x, y, z]
+    
+    返回：
+        FLU到ENU坐标系的旋转四元数，格式为 [w, x, y, z]
+    
+    说明：
+        - FRD: 前-右-下 (Forward-Right-Down) 机体坐标系
+        - NED: 北-东-地 (North-East-Down) 世界坐标系
+        - FLU: 前-左-上 (Forward-Left-Up) 机体坐标系
+        - ENU: 东-北-天 (East-North-Up) 世界坐标系
+        PX4飞控使用FRD-NED约定，而MPC算法使用FLU-ENU约定
     """
     q = quat_norm(q_frd_ned)
     # q_target = q_z90 ⊗ q_x180 ⊗ q ⊗ q_x180
@@ -61,19 +117,25 @@ def frd_ned_to_flu_enu(q_frd_ned):
 
 def ned_to_enu(ned_coords):
     """
-    将NED坐标系(North-East-Down)转换为ENU坐标系(East-North-Up)
+    位置坐标转换：NED → ENU
     
-    参数:
-    ned_coords: 包含NED坐标的元组、列表或numpy数组 (x_ned, y_ned, z_ned)
-                x_ned - 北向坐标
-                y_ned - 东向坐标
-                z_ned - 地向坐标（向下为正）
+    功能：将位置/速度向量从NED坐标系转换为ENU坐标系
     
-    返回:
-    enu_coords: 包含ENU坐标的numpy数组 (x_enu, y_enu, z_enu)
-                x_enu - 东向坐标
-                y_enu - 北向坐标
-                z_enu - 天向坐标（向上为正）
+    参数：
+        ned_coords: NED坐标系下的向量，格式为 (x_ned, y_ned, z_ned)
+                    - x_ned: 北向分量
+                    - y_ned: 东向分量
+                    - z_ned: 地向分量（向下为正）
+    
+    返回：
+        enu_coords: ENU坐标系下的向量，格式为 numpy数组 (x_enu, y_enu, z_enu)
+                    - x_enu: 东向分量
+                    - y_enu: 北向分量
+                    - z_enu: 天向分量（向上为正）
+    
+    说明：
+        NED是PX4飞控的标准世界坐标系，ENU是ROS和算法常用的坐标系
+        此函数用于转换位置、速度等向量量
     """
     # 确保输入是numpy数组
     ned = np.array(ned_coords)
@@ -93,19 +155,24 @@ def ned_to_enu(ned_coords):
 
 def frd_to_flu_angular_rates(frd_rates):
     """
-    将FRD（前-右-下）机体坐标系的角速度转换为FLU（前-左-上）机体坐标系的角速度
+    机体角速度转换：FRD → FLU
     
-    参数:
-    frd_rates: 包含FRD角速度的元组、列表或numpy数组 (p_frd, q_frd, r_frd)
-               p_frd - 绕FRD X轴（前向）的滚转角速度
-               q_frd - 绕FRD Y轴（右向）的俯仰角速度
-               r_frd - 绕FRD Z轴（下向）的偏航角速度
+    功能：将角速度向量从FRD机体坐标系转换为FLU机体坐标系
     
-    返回:
-    flu_rates: 包含FLU角速度的numpy数组 (p_flu, q_flu, r_flu)
-               p_flu - 绕FLU X轴（前向）的滚转角速度
-               q_flu - 绕FLU Y轴（左向）的俯仰角速度
-               r_flu - 绕FLU Z轴（上向）的偏航角速度
+    参数：
+        frd_rates: FRD坐标系下的角速度，格式为 (p_frd, q_frd, r_frd)
+                   - p_frd: 绕X轴（前向）的滚转角速度 (roll rate)
+                   - q_frd: 绕Y轴（右向）的俯仰角速度 (pitch rate)
+                   - r_frd: 绕Z轴（下向）的偏航角速度 (yaw rate)
+    
+    返回：
+        flu_rates: FLU坐标系下的角速度，格式为 numpy数组 (p_flu, q_flu, r_flu)
+                   - p_flu: 绕X轴（前向）的滚转角速度
+                   - q_flu: 绕Y轴（左向）的俯仰角速度
+                   - r_flu: 绕Z轴（上向）的偏航角速度
+    
+    说明：
+        用于将PX4传感器数据（FRD约定）转换为算法使用的FLU约定
     """
     # 确保输入是numpy数组
     frd = np.array(frd_rates)
@@ -122,22 +189,30 @@ def frd_to_flu_angular_rates(frd_rates):
     
     return flu
     
-#归一化FLU角速度 TO FRD角速度
+# 归一化FLU角速度 TO FRD角速度
 def flu_normalized_to_frd_omega(flu_normalized):
     """
-    将FLU（前-左-上）机体坐标系的归一化角速度转换为FRD（前-右-下）机体坐标系的角速度
+    归一化角速度转换与反归一化：FLU归一化 → FRD物理单位
     
-    参数:
-    flu_normalized: 包含FLU归一化角速度的元组、列表或numpy数组 (p_flu_norm, q_flu_norm, r_flu_norm)
-                    p_flu_norm - 绕FLU X轴（前向）的归一化滚转角速度 [-1, 1]
-                    q_flu_norm - 绕FLU Y轴（左向）的归一化俯仰角速度 [-1, 1]
-                    r_flu_norm - 绕FLU Z轴（上向）的归一化偏航角速度 [-1, 1]
+    功能：将MPC输出的归一化角速度（FLU坐标系）转换为PX4可执行的物理角速度（FRD坐标系）
     
-    返回:
-    frd_omega: 包含FRD角速度的numpy数组 (p_frd, q_frd, r_frd)
-               p_frd - 绕FRD X轴（前向）的滚转角速度 (rad/s)
-               q_frd - 绕FRD Y轴（右向）的俯仰角速度 (rad/s)
-               r_frd - 绕FRD Z轴（下向）的偏航角速度 (rad/s)
+    参数：
+        flu_normalized: FLU坐标系下的归一化角速度，格式为 (p_flu_norm, q_flu_norm, r_flu_norm)
+                        - p_flu_norm: 归一化滚转角速度，范围 [-1, 1]
+                        - q_flu_norm: 归一化俯仰角速度，范围 [-1, 1]
+                        - r_flu_norm: 归一化偏航角速度，范围 [-1, 1]
+    
+    返回：
+        frd_omega: FRD坐标系下的物理角速度，格式为 numpy数组 (p_frd, q_frd, r_frd)
+                   - p_frd: 滚转角速度 (rad/s)
+                   - q_frd: 俯仰角速度 (rad/s)
+                   - r_frd: 偏航角速度 (rad/s)
+    
+    说明：
+        该函数完成两个任务：
+        1. 坐标系转换：FLU → FRD（Y轴和Z轴反向）
+        2. 反归一化：将 [-1,1] 范围映射到实际物理角速度（乘以 OMEGA_MAX）
+        MPC求解器输出归一化控制量以提高数值稳定性，需要转换为PX4可接受的格式
     """
     # 确保输入是numpy数组
     flu_norm = np.array(flu_normalized)
@@ -165,14 +240,43 @@ def flu_normalized_to_frd_omega(flu_normalized):
 # ==============================================================================
 
 class MPC_OffboardControl(Node):
-    """Node for controlling a vehicle in offboard mode."""
+    """
+    基于MPC的PX4离线控制节点
+    
+    功能：实现无人机在移动平台上的自主着陆控制，通过ROS2与PX4飞控通信
+    """
 
-    def __init__(self,env: QuadrotorLandingEnv, mpc_solver: QuadMPC, simulation_params: dict) -> None:
+    def __init__(self, env: QuadrotorLandingEnv, mpc_solver: QuadMPC, simulation_params: dict) -> None:
+        """
+        MPC离线控制节点初始化
+        
+        功能：
+            - 初始化ROS2节点和PX4通信接口（发布器、订阅器）
+            - 配置MPC控制器和仿真环境
+            - 设置控制循环定时器和任务参数
+        
+        参数：
+            env: 四旋翼着陆环境实例，包含动力学模型和平台状态
+            mpc_solver: MPC求解器实例，用于计算最优控制输入
+            simulation_params: 仿真参数字典，包含：
+                - quad_init_position: 无人机初始位置 [x, y, z]
+                - quad_init_velocity: 无人机初始速度 [vx, vy, vz]
+                - quad_init_quaternions: 无人机初始姿态四元数 [qw, qx, qy, qz]
+                - platform_init_state: 平台初始状态 [x, y, v, psi]
+                - platform_u1: 平台纵向加速度控制输入
+                - platform_u2: 平台前轮转向角控制输入
+        
+        初始化内容：
+            1. MPC控制器配置：加载权重矩阵、预测时域等参数
+            2. PX4通信接口：创建话题发布器和订阅器
+            3. 状态变量：初始化飞行器状态、控制模式、历史记录
+            4. 定时器：设置控制循环回调函数（频率由Config.DELTA_T决定）
+        """
         super().__init__('MPC_OffboardControl')
 
-    # ==============================================================================
-    # MPC参数传入
-    # ==============================================================================
+        # ==============================================================================
+        # MPC参数传入
+        # ==============================================================================
 
         #传入环境、MPC求解器和仿真参数
         self.env = env
@@ -195,9 +299,9 @@ class MPC_OffboardControl(Node):
         self.r_weights = np.array(Config.MPC.CONTROL_WEIGHTS) # 控制权重向量
         self.step=0
 
-    # ==============================================================================
-    # px4通信接口建立
-    # ==============================================================================
+        # ==============================================================================
+        # px4通信接口建立
+        # ==============================================================================
 
         # Configure QoS profile for publishing and subscribing
         qos_profile = QoSProfile(

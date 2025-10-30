@@ -20,7 +20,6 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'offboard_control_takeoff_and_land = mpcland.offboard_control_TrajectorySetpoint:main',
             'MPC_OffboardControl= mpcland.offboard_attitude_mpc:main',
         ],
     },

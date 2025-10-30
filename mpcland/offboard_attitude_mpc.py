@@ -343,6 +343,10 @@ class MPC_OffboardControl(Node):
         # Create a timer to publish control commands
         self.timer = self.create_timer(Config.DELTA_T, self.timer_callback)
     
+    # ==============================================================================
+    # PX4话题回调函数
+    # ==============================================================================
+
     def vehicle_local_position_callback(self, vehicle_local_position):
         """Callback function for vehicle_local_position topic subscriber."""
         self.vehicle_local_position = vehicle_local_position
@@ -358,6 +362,10 @@ class MPC_OffboardControl(Node):
     def vehicle_attitude_callback(self, vehicle_attitude):
         """Callback function for vehicle_attitude topic subscriber."""
         self.vehicle_attitude = vehicle_attitude
+
+    # ==============================================================================
+    # PX4飞控命令发布函数
+    # ==============================================================================
 
     def arm(self):
         """Send an arm command to the vehicle."""
@@ -555,6 +563,9 @@ class MPC_OffboardControl(Node):
         if self.offboard_setpoint_counter < 11:
             self.offboard_setpoint_counter += 1
 
+# ==============================================================================
+# 主函数入口
+# ==============================================================================
 
 def main(args=None) -> None:
 

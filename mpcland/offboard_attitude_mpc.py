@@ -17,8 +17,6 @@ import run_simulation_world_frame as run_simulation
 # 辅助函数 - 坐标系转换和归一化处理
 # ==============================================================================
 
-
-
 def quat_mul(q1, q2):
     """
     四元数乘法运算（Hamilton约定）
@@ -467,8 +465,8 @@ class MPC_OffboardControl(Node):
         #发送心跳信号，保持offboard模式
         self.publish_offboard_control_heartbeat_signal(self.mode)
 
-        #发送10次心跳信号后，切换到offboard模式并解锁
-        if self.offboard_setpoint_counter == 10:
+        #发送11次心跳信号后，切换到offboard模式并解锁
+        if self.offboard_setpoint_counter == 11:
             self.engage_offboard_mode()
             self.arm()
 
@@ -560,7 +558,7 @@ class MPC_OffboardControl(Node):
                 print(f"\n测试完成！所有结果已保存在 '{output_directory}' 文件夹中。")
                 exit(0)
 
-        if self.offboard_setpoint_counter < 11:
+        if self.offboard_setpoint_counter < 12:
             self.offboard_setpoint_counter += 1
 
 # ==============================================================================
@@ -575,7 +573,7 @@ def main(args=None) -> None:
         'quad_init_velocity': np.array([0.0, 0.0, 0.0]),
         'quad_init_quaternions': run_simulation.euler_to_quaternion(0, 0, np.deg2rad(0)),
         
-        'platform_init_state': np.array([5.0, 5.0, 0.8, np.deg2rad(30)]),
+        'platform_init_state': np.array([0.0, 0.0, 0.8, np.deg2rad(30)]),
         'platform_u1': 0.2,
         'platform_u2': np.deg2rad(10)
     }

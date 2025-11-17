@@ -55,11 +55,11 @@ def euler_to_quaternion(roll: float, pitch: float, yaw: float) -> np.ndarray:
 def calc_vz_ref(current_relative_z: float) -> float:
     """根据当前相对高度，分阶段计算参考下降速度。"""
     if current_relative_z > 1.5:
-        return -1.0
+        return -0.8
     elif current_relative_z > 0.5:
-        return -0.5
+        return -0.8
     else:
-        return -0.2
+        return -0.4
 
 # ==============================================================================
 # 核心算法模块 

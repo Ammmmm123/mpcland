@@ -132,7 +132,7 @@ class MovingPlatformDynamics:
         )
 
     def reset(self, init_state: np.ndarray):
-        """重置平台到指定的初始状态。"""
+        """更新平台到指定的状态。"""
         self.state = PlatformState(
             x=init_state[0],
             y=init_state[1],

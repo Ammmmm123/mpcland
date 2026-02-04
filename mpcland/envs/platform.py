@@ -1,7 +1,7 @@
 import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
-import config.config as Config
+import mpcland.config.config as Config
 from .dynamics import  MovingPlatformDynamics, quaternion_multiply, PlatformState, QuadrotorState
 
 class QuadrotorLandingEnv(gym.Env):

@@ -6,7 +6,7 @@
 """
 import numpy as np
 from casadi import *
-import config.config as Config
+import mpcland.config.config as Config
 
 # =============== CasADi 符号运算辅助函数 ===============
 # 这些函数是MPC内部的实现细节，使用CasADi的符号变量(MX)进行运算。

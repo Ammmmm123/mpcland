@@ -4,7 +4,7 @@
 from dataclasses import dataclass
 import numpy as np
 from math import sin, cos, tan, atan
-import config.config as Config
+import mpcland.config.config as Config
 
 # =============== 状态的数据结构定义 ===============
 # 使用dataclass可以方便地创建带有类型提示的、结构化的数据容器。

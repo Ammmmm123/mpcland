@@ -5,12 +5,12 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 from px4_msgs.msg import OffboardControlMode, TrajectorySetpoint, VehicleCommand, SensorCombined,VehicleLocalPosition, VehicleStatus,VehicleRatesSetpoint,VehicleAttitude
 
-from envs import QuadrotorLandingEnv
-from utils import QuadMPC
+from mpcland.envs import QuadrotorLandingEnv
+from mpcland.utils import QuadMPC
 import math
 import numpy as np
-import config.config as Config
-import run_simulation_world_frame as run_simulation
+import mpcland.config.config as Config
+from . import run_simulation_world_frame as run_simulation
 
 
 # ==============================================================================

@@ -30,8 +30,8 @@ from mpl_toolkits.mplot3d import Axes3D
 from tqdm import tqdm
 
 # 从项目中导入必要的模块
-from envs import  MovingPlatformDynamics, PlatformState
-import config.config as Config
+from .envs.dynamics import MovingPlatformDynamics, PlatformState
+from .config import config as Config
 
 # 设置matplotlib以正确显示中文和负号(linux系统只能用英文)
 # plt.rcParams['font.sans-serif'] = ['SimHei']

@@ -10,8 +10,12 @@ from mpcland.utils import QuadMPC
 import math
 import numpy as np
 import mpcland.config.config as Config
-from . import run_simulation_world_frame as run_simulation
+from mpcland import run_simulation_world_frame as run_simulation
 
+from geometry_msgs.msg import (
+    PoseArray, PoseStamped, Pose,
+    Vector3Stamped, Quaternion
+)
 
 # ==============================================================================
 # 辅助函数 - 坐标系转换和归一化处理
@@ -41,6 +45,21 @@ def quat_mul(q1, q2):
         w1*y2 - x1*z2 + y1*w2 + z1*x2,
         w1*z2 + x1*y2 - y1*x2 + z1*w2,
     ]
+
+def quat_conj(q):
+    """
+    四元数共轭
+
+    功能：计算四元数的共轭，用于旋转逆变换和向量旋转
+
+    参数：
+        q: 四元数，格式为 [w, x, y, z]
+
+    返回：
+        共轭四元数，格式为 [w, -x, -y, -z]
+    """
+    w, x, y, z = q
+    return [w, -x, -y, -z]
 
 def quat_norm(q):
     """
@@ -111,7 +130,6 @@ def frd_ned_to_flu_enu(q_frd_ned):
     # q_target = q_z90 ⊗ q_x180 ⊗ q ⊗ q_x180
     q_out = quat_mul(Q_Z_90, quat_mul(Q_X_180, quat_mul(q, Q_X_180)))
     return quat_norm(q_out)
-
 
 def ned_to_enu(ned_coords):
     """
@@ -186,6 +204,56 @@ def frd_to_flu_angular_rates(frd_rates):
     ])
     
     return flu
+
+def camera_view_to_enu_world(camera_coords, drone_position_enu, q_frd_ned):
+    """
+    相机视野坐标系相对坐标 → ENU世界坐标
+
+    功能：将地面载具在无人机相机视野坐标系中的相对位置，转换为ENU世界坐标系下的绝对位置。
+
+    相机视野坐标系定义（以无人机机体原点为原点）：
+        - X 正方向：机体左侧
+        - Y 正方向：机头方向
+        - Z 正方向：地面方向（向下）
+
+    参数：
+        camera_coords: 相机视野坐标系下的相对位置，格式为 (x_cam, y_cam, z_cam)
+        drone_position_enu: 无人机在ENU世界坐标系下的位置，格式为 (x_enu, y_enu, z_enu)
+        q_frd_ned: PX4姿态四元数（FRD机体系到NED世界系），格式为 [w, x, y, z]
+
+    返回：
+        target_enu: 地面载具在ENU世界坐标系下的位置，格式为 numpy数组 (x_enu, y_enu, z_enu)
+
+    说明：
+        转换流程：
+        1. 相机视野系 -> FRD机体系：
+           v_frd = [y_cam, -x_cam, z_cam]
+        2. FRD机体系 -> NED世界系（使用姿态四元数旋转）
+        3. NED世界系 -> ENU世界系
+        4. 与无人机ENU位置相加得到目标绝对位置
+    """
+    cam = np.array(camera_coords, dtype=float)
+    drone_enu = np.array(drone_position_enu, dtype=float)
+
+    # 相机视野坐标系 -> FRD机体系
+    v_frd = np.array([
+        cam[1],   # x_frd (forward) = y_cam
+        -cam[0],  # y_frd (right)   = -x_cam
+        cam[2]    # z_frd (down)    = z_cam
+    ], dtype=float)
+
+    # FRD机体系 -> NED世界系：v_ned = q ⊗ [0, v_frd] ⊗ q*
+    q = quat_norm(q_frd_ned)
+    v_quat = [0.0, v_frd[0], v_frd[1], v_frd[2]]
+    v_ned_quat = quat_mul(quat_mul(q, v_quat), quat_conj(q))
+    v_ned = np.array(v_ned_quat[1:], dtype=float)
+
+    # NED世界系 -> ENU世界系
+    v_enu = ned_to_enu(v_ned)
+
+    # 目标ENU绝对坐标 = 无人机ENU位置 + 相对位移(ENU)
+    target_enu = drone_enu + v_enu
+    return target_enu
     
 # 归一化FLU角速度 TO FRD角速度
 def flu_normalized_to_frd_omega(flu_normalized):
@@ -328,6 +396,8 @@ class MPC_OffboardControl(Node):
             SensorCombined, '/fmu/out/sensor_combined', self.sensor_combined_callback, qos_profile)
         self.vehicle_attitude_subscriber = self.create_subscription(
             VehicleAttitude, '/fmu/out/vehicle_attitude', self.vehicle_attitude_callback, qos_profile)
+        self.apriltag_position_subscriber = self.create_subscription(
+            PoseArray, '/apriltag/relative_position', self.apriltag_position_callback, qos_profile)
 
         # Initialize variables
         self.offboard_setpoint_counter = 0
@@ -335,6 +405,7 @@ class MPC_OffboardControl(Node):
         self.vehicle_status = VehicleStatus()
         self.sensor_combined = SensorCombined()
         self.vehicle_attitude = VehicleAttitude()
+        self.apriltag_position = PoseArray()
         self.takeoff_height = -5.0
         self.mode=False  #True:角速度-推力控制模式 False:位置控制模式
 
@@ -360,6 +431,10 @@ class MPC_OffboardControl(Node):
     def vehicle_attitude_callback(self, vehicle_attitude):
         """Callback function for vehicle_attitude topic subscriber."""
         self.vehicle_attitude = vehicle_attitude
+
+    def apriltag_position_callback(self, apriltag_position):
+        """Callback function for apriltag_position topic subscriber."""
+        self.apriltag_position = apriltag_position
 
     # ==============================================================================
     # PX4飞控命令发布函数
